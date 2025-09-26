@@ -15,8 +15,71 @@ import glob
 import math
 import re
 
-# Title text for the video (set to "" or " " to disable the title bar)
-title_text = "This is a title."
+def get_user_inputs():
+    """Get user inputs for title, grid dimensions, and custom labels"""
+    print("\n=== Media Collage Configuration ===")
+    
+    # Get title
+    title = input("Enter a title for your collage (press Enter for no title): ").strip()
+    if not title:
+        title = ""
+    
+    # Get grid dimensions
+    print("\nGrid Layout Options:")
+    print("1. Auto-calculate based on number of files")
+    print("2. Custom columns and rows")
+    
+    while True:
+        choice = input("Choose option (1 or 2): ").strip()
+        if choice in ['1', '2']:
+            break
+        print("Please enter 1 or 2")
+    
+    custom_grid = choice == '2'
+    custom_cols = None
+    custom_rows = None
+    
+    if custom_grid:
+        while True:
+            try:
+                custom_cols = int(input("Enter number of columns: "))
+                if custom_cols > 0:
+                    break
+                print("Columns must be greater than 0")
+            except ValueError:
+                print("Please enter a valid number")
+        
+        while True:
+            try:
+                custom_rows = int(input("Enter number of rows: "))
+                if custom_rows > 0:
+                    break
+                print("Rows must be greater than 0")
+            except ValueError:
+                print("Please enter a valid number")
+    
+    return title, custom_grid, custom_cols, custom_rows
+
+def get_custom_labels(media_files):
+    """Get custom labels for each media file"""
+    print(f"\n=== Custom Labels for {len(media_files)} files ===")
+    print("You can set custom labels for each file. Press Enter to use the filename.")
+    
+    custom_labels = []
+    for i, media_file in enumerate(media_files):
+        basename = os.path.splitext(os.path.basename(media_file))[0]
+        default_label = re.sub(r'^\s*\d+\.\s*', '', basename).replace('@', ':')
+        
+        print(f"\nFile {i+1}: {os.path.basename(media_file)}")
+        print(f"Default label: '{default_label}'")
+        custom_label = input("Enter custom label (or press Enter for default): ").strip()
+        
+        if custom_label:
+            custom_labels.append(custom_label)
+        else:
+            custom_labels.append(default_label)
+    
+    return custom_labels
 
 def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
@@ -53,20 +116,50 @@ font_map = {
 }
 font = font_map.get(FONT_FACE.upper(), cv2.FONT_HERSHEY_SIMPLEX)
 
+# Find media files
 media_files = find_media_files()
 if len(media_files) < 1:
     print("Error: No media files found.")
     exit(1)
 
-print(f"Found {len(media_files)} media files to combine")
+print(f"Found {len(media_files)} media files:")
+for i, file in enumerate(media_files):
+    print(f"  {i+1}. {os.path.basename(file)}")
+
+# Get user inputs
+title_text, custom_grid, custom_cols, custom_rows = get_user_inputs()
+
+# Ask for custom labels
+print("\nLabel Options:")
+print("1. Use default labels (based on filenames)")
+print("2. Set custom labels for each file")
+
+while True:
+    label_choice = input("Choose option (1 or 2): ").strip()
+    if label_choice in ['1', '2']:
+        break
+    print("Please enter 1 or 2")
+
+if label_choice == '2':
+    custom_labels = get_custom_labels(media_files)
+else:
+    # Generate default labels
+    custom_labels = []
+    for media_file in media_files:
+        basename = os.path.splitext(os.path.basename(media_file))[0]
+        default_label = re.sub(r'^\s*\d+\.\s*', '', basename).replace('@', ':')
+        custom_labels.append(default_label)
+
+print(f"\nProcessing {len(media_files)} media files...")
 
 clips = []
-display_names = []
+display_names = custom_labels
 clip_types = []
 image_duration = 5
 has_videos = False
 max_video_duration = 0
 
+# Check for videos and determine duration
 for media_file in media_files:
     ext = os.path.splitext(media_file)[1].lower()
     if ext in ['.mp4', '.avi', '.mov', '.mkv', '.webm']:
@@ -81,10 +174,9 @@ if has_videos:
 else:
     print("Only images detected. Will output a single combined image.")
 
+# Load media files
 for media_file in media_files:
     ext = os.path.splitext(media_file)[1].lower()
-    basename = os.path.splitext(os.path.basename(media_file))[0]
-    display_name = re.sub(r'^\s*\d+\.\s*', '', basename).replace('@', ':')
 
     if ext in ['.mp4', '.avi', '.mov', '.mkv', '.webm']:
         print(f"Loading video: {media_file}")
@@ -106,7 +198,35 @@ for media_file in media_files:
         continue
 
     clips.append(clip)
-    display_names.append(display_name)
+
+# Calculate grid dimensions
+num_clips = len(clips)
+if custom_grid:
+    grid_cols = custom_cols
+    grid_rows = custom_rows
+    
+    # Check if grid can accommodate all clips
+    total_cells = grid_cols * grid_rows
+    if total_cells < num_clips:
+        print(f"Warning: Grid ({grid_cols}x{grid_rows} = {total_cells} cells) is smaller than number of clips ({num_clips})")
+        print(f"Only the first {total_cells} clips will be used.")
+        clips = clips[:total_cells]
+        display_names = display_names[:total_cells]
+        clip_types = clip_types[:total_cells]
+        num_clips = len(clips)
+    elif total_cells > num_clips:
+        print(f"Grid ({grid_cols}x{grid_rows} = {total_cells} cells) is larger than number of clips ({num_clips})")
+        print("Some cells will be empty.")
+else:
+    # Auto-calculate grid dimensions
+    if num_clips <= 3:
+        grid_cols = num_clips
+        grid_rows = 1
+    else:
+        grid_cols = math.ceil(math.sqrt(num_clips))
+        grid_rows = math.ceil(num_clips / grid_cols)
+
+print(f"Using grid layout: {grid_cols} columns x {grid_rows} rows")
 
 # Calculate actual dimensions for each clip
 clip_dimensions = []
@@ -114,16 +234,6 @@ for i, clip in enumerate(clips):
     frame = clip.get_frame(0)
     h, w = frame.shape[:2]
     clip_dimensions.append((w, h))
-
-# Calculate grid dimensions
-num_clips = len(clips)
-if num_clips <= 3:
-    grid_cols = num_clips
-    grid_rows = 1
-else:
-    grid_cols = math.ceil(math.sqrt(num_clips))
-    grid_rows = math.ceil(num_clips / grid_cols)
-
 
 def wrap_text(text, max_width, font_scale, thickness):
     words = text.split()
@@ -251,11 +361,15 @@ def process_frame_row_layout(t):
 def process_frame_grid_layout(t):
     max_col_widths = [0] * grid_cols
     for i, (w, h) in enumerate(clip_dimensions):
+        if i >= grid_cols * grid_rows:  # Handle custom grid case
+            break
         col_idx = i % grid_cols
         max_col_widths[col_idx] = max(max_col_widths[col_idx], w)
 
     scaled_clip_dimensions = []
     for i, (w, h) in enumerate(clip_dimensions):
+        if i >= grid_cols * grid_rows:  # Handle custom grid case
+            break
         col_idx = i % grid_cols
         target_width = max_col_widths[col_idx]
         if w > 0:
@@ -270,7 +384,11 @@ def process_frame_grid_layout(t):
 
     for row_idx in range(grid_rows):
         start_clip_idx = row_idx * grid_cols
-        if start_clip_idx >= num_clips: continue
+        if start_clip_idx >= num_clips: 
+            # Create empty row if we have more rows than clips
+            empty_row = np.zeros((100, total_grid_width, 3), dtype=np.uint8)
+            all_final_rows.append(empty_row)
+            continue
 
         max_row_height = 0
         col_widths_in_row = []
@@ -279,49 +397,54 @@ def process_frame_grid_layout(t):
             if clip_idx < num_clips:
                 _, scaled_h = scaled_clip_dimensions[clip_idx]
                 max_row_height = max(max_row_height, scaled_h)
-                col_widths_in_row.append(max_col_widths[col_idx])
+            col_widths_in_row.append(max_col_widths[col_idx])
+        
+        if max_row_height == 0:
+            max_row_height = 100  # Default height for empty rows
         
         row_caption_height = calculate_max_caption_height_for_row(row_idx, display_names, max_row_height, col_widths_in_row)
         row_canvas = np.zeros((max_row_height + row_caption_height, total_grid_width, 3), dtype=np.uint8)
         current_x = 0
+        
         for col_idx in range(grid_cols):
             clip_idx = start_clip_idx + col_idx
-            if clip_idx >= num_clips: break
-
-            clip = clips[clip_idx]
-            scaled_w, scaled_h = scaled_clip_dimensions[clip_idx]
-            frame = clip.get_frame(min(t, clip.duration - 0.001)) if clip_types[clip_idx] == 'video' else clip.get_frame(0)
-            resized_frame = cv2.resize(frame, (scaled_w, scaled_h), interpolation=cv2.INTER_LANCZOS4)
-            y_offset = (max_row_height - scaled_h) // 2
-            row_canvas[y_offset:y_offset + scaled_h, current_x:current_x + scaled_w] = resized_frame
-
-            if row_caption_height > 0:
-                display_name = display_names[clip_idx]
-                caption_font_scale = FILENAME_FONT_SCALE_BASE * (max_row_height / 800) if max_row_height > 0 else FILENAME_FONT_SCALE_BASE
-                caption_thickness = 2 if FONT_BOLD else 1
-                line_height = int(35 * caption_font_scale)
-                wrapped_lines = wrap_text(display_name, scaled_w, caption_font_scale, caption_thickness)
-                total_text_height = len(wrapped_lines) * line_height
-                text_start_y_base = max_row_height + (row_caption_height - total_text_height) // 2
-                for j, line in enumerate(wrapped_lines):
-                    (line_width, _), _ = cv2.getTextSize(line, font, caption_font_scale, caption_thickness)
-                    text_x = current_x + (scaled_w - line_width) // 2
-                    text_y = text_start_y_base + j * line_height + int(line_height * 0.8)
-                    add_text_to_frame(row_canvas, line, (text_x, text_y), font_scale=caption_font_scale, thickness=caption_thickness)
+            col_width = max_col_widths[col_idx]
             
-            current_x += scaled_w
+            if clip_idx < num_clips:
+                clip = clips[clip_idx]
+                scaled_w, scaled_h = scaled_clip_dimensions[clip_idx]
+                frame = clip.get_frame(min(t, clip.duration - 0.001)) if clip_types[clip_idx] == 'video' else clip.get_frame(0)
+                resized_frame = cv2.resize(frame, (scaled_w, scaled_h), interpolation=cv2.INTER_LANCZOS4)
+                y_offset = (max_row_height - scaled_h) // 2
+                row_canvas[y_offset:y_offset + scaled_h, current_x:current_x + scaled_w] = resized_frame
+
+                if row_caption_height > 0:
+                    display_name = display_names[clip_idx]
+                    caption_font_scale = FILENAME_FONT_SCALE_BASE * (max_row_height / 800) if max_row_height > 0 else FILENAME_FONT_SCALE_BASE
+                    caption_thickness = 2 if FONT_BOLD else 1
+                    line_height = int(35 * caption_font_scale)
+                    wrapped_lines = wrap_text(display_name, scaled_w, caption_font_scale, caption_thickness)
+                    total_text_height = len(wrapped_lines) * line_height
+                    text_start_y_base = max_row_height + (row_caption_height - total_text_height) // 2
+                    for j, line in enumerate(wrapped_lines):
+                        (line_width, _), _ = cv2.getTextSize(line, font, caption_font_scale, caption_thickness)
+                        text_x = current_x + (scaled_w - line_width) // 2
+                        text_y = text_start_y_base + j * line_height + int(line_height * 0.8)
+                        add_text_to_frame(row_canvas, line, (text_x, text_y), font_scale=caption_font_scale, thickness=caption_thickness)
+            
+            current_x += col_width
         all_final_rows.append(row_canvas)
     
     return np.vstack(all_final_rows) if all_final_rows else None
 
 def process_frame(t):
-    # This function now acts as a dispatcher
-    if num_clips <= 3:
+    # Use row layout for 3 or fewer clips, grid layout otherwise
+    if num_clips <= 3 and not custom_grid:
         grid = process_frame_row_layout(t)
     else:
         grid = process_frame_grid_layout(t)
 
-    # Title bar logic (common for both layouts)
+    # Title bar logic
     if not (title_text and title_text.strip()):
         if grid is None: return np.zeros((100, 100, 3), dtype=np.uint8)
         return grid.astype(np.uint8)
@@ -352,8 +475,11 @@ def process_frame(t):
     
     return combined.astype(np.uint8)
 
-
 # Generate output
+print(f"\nGenerating collage with title: '{title_text}'")
+print(f"Grid: {grid_cols}x{grid_rows}")
+print(f"Labels: {display_names}")
+
 if has_videos:
     output_file = "combined_video.mp4"
     max_duration = max((clip.duration for clip in clips if clip.duration is not None), default=image_duration)
@@ -371,3 +497,5 @@ else:
 for clip in clips:
     if isinstance(clip, VideoFileClip):
         clip.close()
+
+print("Process completed!")
