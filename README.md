@@ -25,7 +25,7 @@ You can change the title [here](https://github.com/BigStationW/Compare-pictures-
 ```pip install -r requirements.txt```
 
 ## 3. Your images/videos must be on the same folder as [the script](https://github.com/BigStationW/Compare-pictures/blob/main/combine.py) and the run.bat file
-- Naming the files as "1. X.jpg", "2. Y.jpg" and so on tells the script the order in which the images should appear from left to right.
+- Naming the files as "1. X.jpg", "2. Y.jpg" and so on tells the script the order in which the images should appear from left to right (And if you name them “1a. X.jpg,” “1b. Y.jpg,” and “2. Z.jpg,” images 1a and 1b will be stacked vertically).
 - The images can be in any of the following formats: ['.jpg', '.jpeg', '.png', '.bmp', '.webp']
 - The videos can be in any of the following formats: ['.mp4', '.avi', '.mov', '.mkv', '.webm']
 
